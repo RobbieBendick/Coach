@@ -1,0 +1,14 @@
+## Interface: 30403
+## Author: Mageiden
+## Title: Coach
+## Notes: Messages players back for coaching inquiries.
+## DefaultState: enabled
+## Version: v0.0.1
+## SavedVariables: CoachDB
+embeds.xml
+Constants.lua
+
+ChatHistory.lua
+Config.lua
+Events.lua
+Coach.lua
