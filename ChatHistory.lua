@@ -3,6 +3,17 @@ local AceGUI = LibStub("AceGUI-3.0");
 
 local chatHistoryFrame = nil;
 local selectedCharacter = nil;
+local refreshTimer = nil;
+
+-- Helper function to extract server name from character name (everything after first dash)
+function Coach:GetServerName(characterName)
+    if not characterName then return ""; end
+    local dashPos = string.find(characterName, "-");
+    if dashPos then
+        return string.sub(characterName, dashPos + 1);
+    end
+    return "";
+end
 
 -- Helper function to format timestamp
 function Coach:FormatTimestamp(timestamp)
@@ -80,7 +91,6 @@ end
 
 -- Refresh the chat display
 function Coach:RefreshChatDisplay()
-    print('ello')
     if not chatHistoryFrame or not selectedCharacter then
         return;
     end
@@ -145,7 +155,12 @@ function Coach:RefreshCharacterList()
     else
         for _, name in ipairs(characterNames) do
             local button = AceGUI:Create("InteractiveLabel");
-            button:SetText(name);
+            local serverName = self:GetServerName(name);
+            local displayText = name;
+            if serverName ~= "" then
+                displayText = name .. " |cff808080(" .. serverName .. ")|r";
+            end
+            button:SetText(displayText);
             button:SetFullWidth(true);
             if selectedCharacter == name then
                 -- Set yellowish background with low alpha instead of text color
@@ -178,6 +193,21 @@ end
 function Coach:CreateChatHistoryGUI()
     if chatHistoryFrame then
         chatHistoryFrame:Show();
+        -- Start refresh timer if window already exists
+        if refreshTimer then
+            refreshTimer:Cancel();
+        end
+        refreshTimer = C_Timer.NewTicker(1.0, function()
+            if chatHistoryFrame and chatHistoryFrame:IsShown() then
+                self:RefreshChatDisplay();
+            else
+                -- Stop timer if window is hidden
+                if refreshTimer then
+                    refreshTimer:Cancel();
+                    refreshTimer = nil;
+                end
+            end
+        end);
         return;
     end
 
@@ -192,6 +222,11 @@ function Coach:CreateChatHistoryGUI()
     chatHistoryFrame:SetWidth(minWidth);
     chatHistoryFrame:SetCallback("OnClose", function(widget)
         widget:Hide();
+        -- Stop refresh timer when window is closed
+        if refreshTimer then
+            refreshTimer:Cancel();
+            refreshTimer = nil;
+        end
     end);
     
     -- Hook into frame resize events after frame is created
@@ -223,6 +258,22 @@ function Coach:CreateChatHistoryGUI()
                 local mainContainer = widget:GetUserData("mainContainer");
                 if mainContainer then
                     mainContainer:DoLayout();
+                end
+            end
+        end);
+        
+        -- Start refresh timer when window is shown
+        if refreshTimer then
+            refreshTimer:Cancel();
+        end
+        refreshTimer = C_Timer.NewTicker(1.0, function()
+            if chatHistoryFrame and chatHistoryFrame:IsShown() then
+                self:RefreshChatDisplay();
+            else
+                -- Stop timer if window is hidden
+                if refreshTimer then
+                    refreshTimer:Cancel();
+                    refreshTimer = nil;
                 end
             end
         end);
@@ -356,6 +407,11 @@ end
 function Coach:ToggleChatHistory()
     if chatHistoryFrame and chatHistoryFrame:IsShown() then
         chatHistoryFrame:Hide();
+        -- Stop refresh timer when window is hidden
+        if refreshTimer then
+            refreshTimer:Cancel();
+            refreshTimer = nil;
+        end
     else
         self:CreateChatHistoryGUI();
     end

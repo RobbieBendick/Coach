@@ -9,7 +9,7 @@ function Coach:IncrementCharacterInteractedWith(characterName)
     end
 end
 
-function Coach:SendDelayedMessage(message, characterName)
+function Coach:SendDelayedMessage(message, characterName, fullCharacterName)
     print("  |cff00FFFF[SendDelayedMessage]|r Called for: " .. characterName);
     
     local maxInteractions = self.db.profile.maxInteractionsPerPlayer or 2;
@@ -35,11 +35,14 @@ function Coach:SendDelayedMessage(message, characterName)
     print("    Delay: " .. delay .. " seconds (range: " .. minDelay .. "-" .. maxDelay .. ")");
     print("    |cff00FF00[SCHEDULED]|r Message will be sent in " .. delay .. " seconds");
     
+    -- Use full name for chat history if provided, otherwise use short name
+    local nameForHistory = fullCharacterName or characterName;
+    
     C_Timer.After(delay, function ()
         print("    |cff00FF00[SENDING]|r Sending message to " .. characterName .. ": " .. message);
         SendChatMessage(message, "WHISPER", nil, characterName);
-        -- Save outgoing message to chat history
-        self:AddOutgoingMessage(characterName, message);
+        -- Save outgoing message to chat history with full name (including server)
+        self:AddOutgoingMessage(nameForHistory, message);
     end);
     
     self:IncrementCharacterInteractedWith(characterName);
@@ -124,7 +127,8 @@ function Coach:HandleWhispers(event, message, sender, ...)
     -- Save incoming message to chat history (before lowercasing)
     local originalMessage = message;
     local whispererCharacterName = sender:match("([^%-]+)");
-    self:AddIncomingMessage(whispererCharacterName, originalMessage);
+    -- Store full name (with server) in chat history
+    self:AddIncomingMessage(sender, originalMessage);
     
     -- Check if paused
     if self.db.profile.isPaused then
@@ -154,6 +158,7 @@ function Coach:HandleWhispers(event, message, sender, ...)
     local responseToSend = matchedResponse or self:GetDefaultResponse(currentInteractions);
     
     if responseToSend and responseToSend:match("%S") then
-        self:SendDelayedMessage(responseToSend, whispererCharacterName);
+        -- Pass full sender name (with server) for chat history, but use short name for sending
+        self:SendDelayedMessage(responseToSend, whispererCharacterName, sender);
     end
 end
