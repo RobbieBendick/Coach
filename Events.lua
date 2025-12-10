@@ -132,7 +132,6 @@ function Coach:HandleWhispers(event, message, sender, ...)
     
     -- Check if paused
     if self.db.profile.isPaused then
-        self:Print("Addon is paused, not responding to whispers.");
         return;
     end
     

@@ -65,6 +65,14 @@ function Coach:AddIncomingMessage(characterName, message)
     if #self.db.profile.chatHistory[characterName] > 100 then
         table.remove(self.db.profile.chatHistory[characterName], 1);
     end
+    
+    -- Immediately refresh character list and chat display if window is open
+    if chatHistoryFrame and chatHistoryFrame:IsShown() then
+        self:RefreshCharacterList();
+        if selectedCharacter == characterName then
+            self:RefreshChatDisplay();
+        end
+    end
 end
 
 -- Add outgoing message to chat history
@@ -86,6 +94,14 @@ function Coach:AddOutgoingMessage(characterName, message)
     -- Limit history to last 100 messages per character
     if #self.db.profile.chatHistory[characterName] > 100 then
         table.remove(self.db.profile.chatHistory[characterName], 1);
+    end
+    
+    -- Immediately refresh character list and chat display if window is open
+    if chatHistoryFrame and chatHistoryFrame:IsShown() then
+        self:RefreshCharacterList();
+        if selectedCharacter == characterName then
+            self:RefreshChatDisplay();
+        end
     end
 end
 
@@ -199,6 +215,7 @@ function Coach:CreateChatHistoryGUI()
         end
         refreshTimer = C_Timer.NewTicker(1.0, function()
             if chatHistoryFrame and chatHistoryFrame:IsShown() then
+                self:RefreshCharacterList();
                 self:RefreshChatDisplay();
             else
                 -- Stop timer if window is hidden
@@ -268,6 +285,7 @@ function Coach:CreateChatHistoryGUI()
         end
         refreshTimer = C_Timer.NewTicker(1.0, function()
             if chatHistoryFrame and chatHistoryFrame:IsShown() then
+                self:RefreshCharacterList();
                 self:RefreshChatDisplay();
             else
                 -- Stop timer if window is hidden
@@ -278,29 +296,6 @@ function Coach:CreateChatHistoryGUI()
             end
         end);
     end);
-    
-    -- Set min resize after frame is created - try multiple times to ensure it works
-    local function setMinResize()
-        if chatHistoryFrame and chatHistoryFrame.frame then
-            local frame = chatHistoryFrame.frame;
-            if frame.SetMinResize then
-                frame:SetMinResize(minWidth, minHeight);
-                return true;
-            end
-        end
-        return false;
-    end
-    
-    -- Try immediately
-    if not setMinResize() then
-        -- Try after short delay
-        C_Timer.After(0.1, function()
-            if not setMinResize() then
-                -- Try one more time after longer delay
-                C_Timer.After(0.2, setMinResize);
-            end
-        end);
-    end
     
     -- Create main container with horizontal layout
     local mainContainer = AceGUI:Create("SimpleGroup");
@@ -349,6 +344,23 @@ function Coach:CreateChatHistoryGUI()
     self:RefreshCharacterList();
     
     chatHistoryFrame:Show();
+    
+    -- Start refresh timer immediately when window is created
+    if refreshTimer then
+        refreshTimer:Cancel();
+    end
+    refreshTimer = C_Timer.NewTicker(1.0, function()
+        if chatHistoryFrame and chatHistoryFrame:IsShown() then
+            self:RefreshCharacterList();
+            self:RefreshChatDisplay();
+        else
+            -- Stop timer if window is hidden
+            if refreshTimer then
+                refreshTimer:Cancel();
+                refreshTimer = nil;
+            end
+        end
+    end);
     
     -- Force layout calculation after showing
     C_Timer.After(0.05, function()

@@ -287,7 +287,7 @@ function Coach:CreateMenu()
                     keywordResponsesDesc = {
                         order = 1,
                         type = "description",
-                        name = "Select a keyword from the list to edit its response, or add a new keyword.",
+                        name = "Select a keyword from the list to edit its response, or add a new keyword.\n\n|cffCCCCCCIf you receive a message with the selected word within it, it will give the response given instead of the default.|r",
                         fontSize = "medium",
                     },
                     selectedKeyword = {
@@ -540,9 +540,6 @@ function AdvertiseLFG()
 end
 
 function AdvertiseTrade()
-    if Coach.db.profile.constructMessageIsActive then
-        return Coach:CreateAdvertisementMessage();
-    end
     if not Coach.db.profile.message then 
         return print("Please enter an advertisement message.");
     end
@@ -658,11 +655,31 @@ function Coach:OnInitialize()
     self:LoadStaticPopups();
     self:CreateMinimapIcon();
     self:CreateMenu();
+
+    -- start paused
+    self.db.profile.isPaused = true;
 end
 
 function Coach:OnEnable()
-    -- Automatically activate on reload or login
-    self.db.profile.isPaused = false;
-    self:Print("Coach addon enabled");
-    -- refresh 
+    -- Check if general macro named "Coach" exists
+    local macroExists = false;
+    local numGeneralMacros = GetNumMacros();
+    
+    -- Check general macros (first numGeneralMacros slots)
+    for i = 1, numGeneralMacros do
+        local name, icon, body = GetMacroInfo(i);
+        if name == "Coach" then
+            macroExists = true;
+            -- Check if body is correct, update if needed
+            if body ~= "/run AdvertiseLFG()" then
+                EditMacro(i, "Coach", icon, "/run AdvertiseLFG()");
+            end
+            break;
+        end
+    end
+    
+    -- If macro doesn't exist, create it
+    if not macroExists then
+        CreateMacro("Coach", "INV_Misc_QuestionMark", "/run AdvertiseLFG()", false);
+    end
 end
