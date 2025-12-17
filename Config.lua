@@ -620,6 +620,21 @@ function Coach:LoadStaticPopups()
             StaticPopup_Hide("NOT_IN_TRADE");
         end
     };
+    StaticPopupDialogs["COACH_DELETE_CHAT_HISTORY"] = {
+        text = "Are you sure you want to delete the chat history of %s?",
+        button1 = "Delete",
+        button2 = "Cancel",
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = STATICPOPUP_NUMDIALOGS,
+        OnAccept = function(self, data)
+            Coach:ConfirmDeleteChatHistory(data);
+        end,
+        OnCancel = function ()
+            StaticPopup_Hide("COACH_DELETE_CHAT_HISTORY");
+        end
+    };
 end
 
 local defaults = {

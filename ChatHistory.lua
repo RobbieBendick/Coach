@@ -15,6 +15,46 @@ function Coach:GetServerName(characterName)
     return "";
 end
 
+-- Helper function to extract character name (everything before first dash)
+function Coach:GetCharacterNameOnly(characterName)
+    if not characterName then return ""; end
+    local dashPos = string.find(characterName, "-");
+    if dashPos then
+        return string.sub(characterName, 1, dashPos - 1);
+    end
+    return characterName;
+end
+
+-- Helper function to normalize realm name (remove/replace dashes for comparison)
+function Coach:NormalizeRealmName(realmName)
+    if not realmName then return ""; end
+    -- Replace dashes with nothing for comparison (handles "Ra-den" vs "Raden")
+    return string.gsub(realmName, "-", "");
+end
+
+-- Helper function to check if a character name matches the current player
+function Coach:IsCurrentPlayer(characterName)
+    if not characterName then return false; end
+    
+    local currentPlayerName = UnitName("player");
+    local currentRealmName = GetRealmName();
+    
+    -- Extract character name and realm from the stored name
+    local storedCharName = self:GetCharacterNameOnly(characterName);
+    local storedRealmName = self:GetServerName(characterName);
+    
+    -- Compare character names (case-insensitive)
+    if string.lower(storedCharName) ~= string.lower(currentPlayerName) then
+        return false;
+    end
+    
+    -- Normalize and compare realm names (handles dash differences)
+    local normalizedStoredRealm = self:NormalizeRealmName(storedRealmName);
+    local normalizedCurrentRealm = self:NormalizeRealmName(currentRealmName);
+    
+    return string.lower(normalizedStoredRealm) == string.lower(normalizedCurrentRealm);
+end
+
 -- Helper function to format timestamp
 function Coach:FormatTimestamp(timestamp)
     if not timestamp then return "[Unknown]"; end
@@ -105,9 +145,49 @@ function Coach:AddOutgoingMessage(characterName, message)
     end
 end
 
+-- Delete chat history for selected character
+function Coach:DeleteSelectedCharacterHistory()
+    if not selectedCharacter then
+        return;
+    end
+    
+    -- Show confirmation dialog
+    StaticPopup_Show("COACH_DELETE_CHAT_HISTORY", selectedCharacter);
+end
+
+-- Actually perform the deletion (called from popup)
+function Coach:ConfirmDeleteChatHistory(characterName)
+    local charToDelete = characterName or selectedCharacter;
+    if not charToDelete then
+        return;
+    end
+    
+    if self.db.profile.chatHistory and self.db.profile.chatHistory[charToDelete] then
+        self.db.profile.chatHistory[charToDelete] = nil;
+        if selectedCharacter == charToDelete then
+            selectedCharacter = nil;
+        end
+        self:RefreshCharacterList();
+        self:RefreshChatDisplay();
+        self:RefreshDeleteButton();
+    end
+end
+
+-- Refresh delete button visibility
+function Coach:RefreshDeleteButton()
+    local deleteButton = chatHistoryFrame and chatHistoryFrame:GetUserData("deleteButton");
+    if deleteButton and deleteButton.frame then
+        if selectedCharacter then
+            deleteButton.frame:Show();
+        else
+            deleteButton.frame:Hide();
+        end
+    end
+end
+
 -- Refresh the chat display
 function Coach:RefreshChatDisplay()
-    if not chatHistoryFrame or not selectedCharacter then
+    if not chatHistoryFrame then
         return;
     end
     
@@ -118,6 +198,14 @@ function Coach:RefreshChatDisplay()
     
     -- Clear existing content
     chatScroll:ReleaseChildren();
+    
+    if not selectedCharacter then
+        local initialMessage = AceGUI:Create("Label");
+        initialMessage:SetText("Select a character from the list to view chat history.");
+        initialMessage:SetFullWidth(true);
+        chatScroll:AddChild(initialMessage);
+        return;
+    end
     
     local history = self.db.profile.chatHistory[selectedCharacter] or {};
     
@@ -139,6 +227,9 @@ function Coach:RefreshChatDisplay()
             chatScroll:AddChild(messageFrame);
         end
     end
+    
+    -- Refresh delete button visibility
+    self:RefreshDeleteButton();
 end
 
 -- Refresh character list
@@ -158,7 +249,11 @@ function Coach:RefreshCharacterList()
     local characterNames = {};
     
     for name, _ in pairs(chatHistory) do
-        table.insert(characterNames, name);
+        -- Only include characters that are not the current player
+        -- Use normalized comparison to handle realm name formatting differences
+        if not self:IsCurrentPlayer(name) then
+            table.insert(characterNames, name);
+        end
     end
     
     table.sort(characterNames);
@@ -171,12 +266,7 @@ function Coach:RefreshCharacterList()
     else
         for _, name in ipairs(characterNames) do
             local button = AceGUI:Create("InteractiveLabel");
-            local serverName = self:GetServerName(name);
-            local displayText = name;
-            if serverName ~= "" then
-                displayText = name .. " |cff808080(" .. serverName .. ")|r";
-            end
-            button:SetText(displayText);
+            button:SetText(name);
             button:SetFullWidth(true);
             if selectedCharacter == name then
                 -- Set yellowish background with low alpha instead of text color
@@ -197,6 +287,7 @@ function Coach:RefreshCharacterList()
                 selectedCharacter = name;
                 self:RefreshCharacterList();
                 self:RefreshChatDisplay();
+                self:RefreshDeleteButton();
             end);
             characterList:AddChild(button);
         end
@@ -217,6 +308,7 @@ function Coach:CreateChatHistoryGUI()
             if chatHistoryFrame and chatHistoryFrame:IsShown() then
                 self:RefreshCharacterList();
                 self:RefreshChatDisplay();
+                self:RefreshDeleteButton();
             else
                 -- Stop timer if window is hidden
                 if refreshTimer then
@@ -251,6 +343,17 @@ function Coach:CreateChatHistoryGUI()
         if chatHistoryFrame and chatHistoryFrame.frame then
             local frame = chatHistoryFrame.frame;
             
+            -- Handle ESC key to close window
+            frame:SetScript("OnKeyDown", function(self, key)
+                if key == "ESCAPE" then
+                    self:SetPropagateKeyboardInput(false);
+                    chatHistoryFrame:Hide();
+                else
+                    self:SetPropagateKeyboardInput(true);
+                end
+            end);
+            frame:EnableKeyboard(true);
+            
             -- Hook into OnSizeChanged to detect window resizing
             local originalOnSizeChanged = frame:GetScript("OnSizeChanged");
             frame:SetScript("OnSizeChanged", function(self, width, height)
@@ -276,6 +379,17 @@ function Coach:CreateChatHistoryGUI()
                 if mainContainer then
                     mainContainer:DoLayout();
                 end
+                -- Reposition delete button
+                local deleteButton = widget:GetUserData("deleteButton");
+                local chatGroup = widget:GetUserData("chatGroup");
+                if deleteButton and deleteButton.frame and chatGroup and chatGroup.frame then
+                    local chatGroupFrame = chatGroup.frame;
+                    local deleteButtonFrame = deleteButton.frame;
+                    deleteButtonFrame:SetParent(chatGroupFrame);
+                    deleteButtonFrame:ClearAllPoints();
+                    deleteButtonFrame:SetPoint("TOPRIGHT", chatGroupFrame, "TOPRIGHT", -10, 5);
+                    deleteButtonFrame:SetFrameLevel(chatGroupFrame:GetFrameLevel() + 10);
+                end
             end
         end);
         
@@ -287,6 +401,7 @@ function Coach:CreateChatHistoryGUI()
             if chatHistoryFrame and chatHistoryFrame:IsShown() then
                 self:RefreshCharacterList();
                 self:RefreshChatDisplay();
+                self:RefreshDeleteButton();
             else
                 -- Stop timer if window is hidden
                 if refreshTimer then
@@ -327,6 +442,33 @@ function Coach:CreateChatHistoryGUI()
     mainContainer:AddChild(chatGroup);
     chatHistoryFrame:SetUserData("chatGroup", chatGroup);
     
+    -- Create delete button (positioned in top right, outside layout)
+    local deleteButton = AceGUI:Create("Button");
+    deleteButton:SetText("Delete");
+    deleteButton:SetWidth(80);
+    deleteButton:SetHeight(20);
+    deleteButton:SetCallback("OnClick", function()
+        self:DeleteSelectedCharacterHistory();
+    end);
+    chatHistoryFrame:SetUserData("deleteButton", deleteButton);
+    
+    -- Position delete button in top right after frame is created
+    -- Don't add it as a child, position it absolutely
+    C_Timer.After(0.1, function()
+        if deleteButton and deleteButton.frame and chatGroup and chatGroup.frame then
+            local chatGroupFrame = chatGroup.frame;
+            local deleteButtonFrame = deleteButton.frame;
+            -- Set parent to the InlineGroup frame (not content area)
+            deleteButtonFrame:SetParent(chatGroupFrame);
+            -- Position in top right, in the title bar area
+            deleteButtonFrame:ClearAllPoints();
+            deleteButtonFrame:SetPoint("TOPRIGHT", chatGroupFrame, "TOPRIGHT", -10, -5);
+            deleteButtonFrame:SetFrameLevel(chatGroupFrame:GetFrameLevel() + 10);
+            -- Hide button initially
+            deleteButtonFrame:Hide();
+        end
+    end);
+    
     local chatScroll = AceGUI:Create("ScrollFrame");
     chatScroll:SetLayout("List");
     chatScroll:SetFullWidth(true);
@@ -353,6 +495,7 @@ function Coach:CreateChatHistoryGUI()
         if chatHistoryFrame and chatHistoryFrame:IsShown() then
             self:RefreshCharacterList();
             self:RefreshChatDisplay();
+            self:RefreshDeleteButton();
         else
             -- Stop timer if window is hidden
             if refreshTimer then
