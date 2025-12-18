@@ -135,6 +135,36 @@ function Coach:CreateMenu()
                         end,
                         width = "full",
                     },
+                    lastAdvertisementInfo = {
+                        order = 3,
+                        type = "description",
+                        name = function()
+                            local lastTime = self.db.profile.lastAdvertisementTime;
+                            if not lastTime or lastTime == 0 then
+                                return "|cffCCCCCCLast advertisement: Never|r";
+                            end
+                            
+                            local currentTime = time();
+                            local timeDiff = currentTime - lastTime;
+                            
+                            local timeString;
+                            if timeDiff < 60 then
+                                timeString = timeDiff .. " second" .. (timeDiff == 1 and "" or "s") .. " ago";
+                            elseif timeDiff < 3600 then
+                                local minutes = math.floor(timeDiff / 60);
+                                timeString = minutes .. " minute" .. (minutes == 1 and "" or "s") .. " ago";
+                            elseif timeDiff < 86400 then
+                                local hours = math.floor(timeDiff / 3600);
+                                timeString = hours .. " hour" .. (hours == 1 and "" or "s") .. " ago";
+                            else
+                                local days = math.floor(timeDiff / 86400);
+                                timeString = days .. " day" .. (days == 1 and "" or "s") .. " ago";
+                            end
+                            
+                            return "|cffCCCCCCLast advertisement: |r|cffFFFF00" .. timeString .. "|r";
+                        end,
+                        fontSize = "small",
+                    },
                 },
             },
             responseSettings = {
@@ -255,7 +285,7 @@ function Coach:CreateMenu()
                         name = "Max Interactions Per Player",
                         desc = "Maximum number of times to respond to the same player before stopping (prevents spam)",
                         min = 1,
-                        max = 10,
+                        max = 3,
                         step = 1,
                         get = function()
                             return self.db.profile.maxInteractionsPerPlayer or 2;
@@ -467,6 +497,97 @@ function Coach:CreateMenu()
                     },
                 },
             },
+            excludedKeywords = {
+                order = 4,
+                type = "group",
+                name = "Excluded Keywords",
+                inline = false,
+                args = {
+                    excludedKeywordsDesc = {
+                        order = 1,
+                        type = "description",
+                        name = "Messages containing any of these keywords will be ignored and not responded to.\n\n|cffCCCCCCKeywords are checked as substrings (case-insensitive). For example, 'report' will match 'report', 'reported', 'reporting', etc.|r",
+                        fontSize = "medium",
+                    },
+                    selectedExcludedKeyword = {
+                        order = 2,
+                        type = "select",
+                        name = "Select Excluded Keyword",
+                        desc = "Choose an excluded keyword to delete",
+                        width = "full",
+                        values = function()
+                            local keywords = {};
+                            if self.db.profile.excludedKeywords then
+                                local keywordList = {};
+                                for keyword, _ in pairs(self.db.profile.excludedKeywords) do
+                                    table.insert(keywordList, keyword);
+                                end
+                                table.sort(keywordList);
+                                for _, keyword in ipairs(keywordList) do
+                                    keywords[keyword] = keyword;
+                                end
+                            end
+                            if not next(keywords) then
+                                keywords[""] = "(No excluded keywords - add one below)";
+                            end
+                            return keywords;
+                        end,
+                        get = function()
+                            return self.db.profile.selectedExcludedKeyword or "";
+                        end,
+                        set = function(info, value)
+                            self.db.profile.selectedExcludedKeyword = value;
+                        end,
+                    },
+                    addNewExcludedKeyword = {
+                        order = 3,
+                        type = "input",
+                        name = "Add New Excluded Keyword",
+                        desc = "Enter a keyword to exclude. Messages containing this keyword will be ignored.",
+                        width = "full",
+                        get = function()
+                            return "";
+                        end,
+                        set = function(info, value)
+                            if value and value:match("%S") then
+                                local keyword = value:lower():match("^%s*(.-)%s*$");
+                                if keyword and keyword ~= "" then
+                                    if not self.db.profile.excludedKeywords then
+                                        self.db.profile.excludedKeywords = {};
+                                    end
+                                    if not self.db.profile.excludedKeywords[keyword] then
+                                        self.db.profile.excludedKeywords[keyword] = true;
+                                        self.db.profile.selectedExcludedKeyword = keyword;
+                                        -- Refresh the options to update the dropdown
+                                        AceConfig:NotifyChange(self.addonName);
+                                    end
+                                end
+                            end
+                        end,
+                    },
+                    deleteExcludedKeyword = {
+                        order = 4,
+                        type = "execute",
+                        name = "Delete Selected Excluded Keyword",
+                        desc = "Delete the currently selected excluded keyword",
+                        width = "full",
+                        disabled = function()
+                            return not self.db.profile.selectedExcludedKeyword or self.db.profile.selectedExcludedKeyword == "";
+                        end,
+                        func = function()
+                            local selected = self.db.profile.selectedExcludedKeyword;
+                            if selected and selected ~= "" and self.db.profile.excludedKeywords then
+                                self.db.profile.excludedKeywords[selected] = nil;
+                                self.db.profile.selectedExcludedKeyword = "";
+                                -- Refresh the options to update the dropdown
+                                AceConfig:NotifyChange(self.addonName);
+                            end
+                        end,
+                        confirm = true,
+                        confirmText = "Are you sure you want to delete this excluded keyword?",
+                    },
+                },
+            },
         }
     }
     
@@ -528,6 +649,10 @@ function AdvertiseLFG()
     if Coach:IsInLookingForGroup() then
         local lookingForGroupChannelID = Coach:FindLFGChannelIndex();
         SendChatMessage(Coach.db.profile.message, "CHANNEL", nil, lookingForGroupChannelID);
+        -- Record the timestamp when advertisement is successfully sent
+        Coach.db.profile.lastAdvertisementTime = time();
+        -- Refresh the options to update the display
+        AceConfig:NotifyChange(Coach.addonName);
     else
         ChatFrame_AddChannel(DEFAULT_CHAT_FRAME, "LookingForGroup");
         print("Advertisement failed because you're not in the LookingForGroup channel.");
@@ -642,7 +767,8 @@ local defaults = {
         isPaused = true,
         minDelayTime = 4,
         maxDelayTime = 10,
-        maxInteractionsPerPlayer = 2,
+        maxInteractionsPerPlayer = 1,
+        lastAdvertisementTime = 0,
         defaultResponse = "",
         enableSecondaryDefault = false,
         secondaryDefaultResponse = "",
@@ -656,6 +782,12 @@ local defaults = {
             -- ["coaching"] = {response = "I offer coaching services!", threshold = 2},
         },
         selectedKeyword = "",
+        excludedKeywords = {
+            -- Structure: keyword -> true
+            ["report"] = true,
+            ["spam"] = true,
+        },
+        selectedExcludedKeyword = "",
     }
 };
 

@@ -137,6 +137,15 @@ function Coach:HandleWhispers(event, message, sender, ...)
     
     message = message:lower();
     
+    -- Check for excluded keywords (case-insensitive substring match)
+    local excludedKeywords = self.db.profile.excludedKeywords or {};
+    for excludedKeyword, _ in pairs(excludedKeywords) do
+        if message:find(excludedKeyword:lower(), 1, true) then
+            self:Print("Message contains excluded keyword '" .. excludedKeyword .. "', ignoring.");
+            return;
+        end
+    end
+    
     -- Check interaction limits
     local maxInteractions = self.db.profile.maxInteractionsPerPlayer or 2;
     local currentInteractions = self.recentlyInteractedWith[whispererCharacterName] or 0;
